@@ -1,0 +1,156 @@
+# Build the workshop image for linux/amd64 and linux/arm64 on native runners,
+# check it with check_setup.py, and publish one multi-arch tag to GHCR:
+#   ghcr.io/<owner>/issw2026-autoates-workshop:latest   (default branch, docker branch)
+#   ghcr.io/<owner>/issw2026-autoates-workshop:<branch> / :sha-<short>
+name: docker
+
+on:
+  push:
+    branches: [main, docker]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Image name (lowercase)
+        run: echo "IMAGE=${REGISTRY}/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build (load locally for the check)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: workshop:test
+          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+
+      - name: check_setup.py inside the image
+        run: docker run --rm workshop:test python check_setup.py
+
+      - name: Smoke test JupyterLab starts
+        run: |
+          docker run -d --name jl -p 8888:8888 workshop:test
+          for i in $(seq 30); do curl -sf http://localhost:8888/api >/dev/null && break; sleep 2; done
+          curl -sf http://localhost:8888/api/kernelspecs | grep -q '"autoATES workshop"'
+          docker rm -f jl
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push by digest
+        if: github.event_name != 'pull_request'
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.platform }}
+
+      - name: Save digest
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p /tmp/digests
+          d="${{ steps.push.outputs.digest }}"
+          touch "/tmp/digests/${d#sha256:}"
+          echo "ARCH=${{ matrix.platform }}" | tr / - >> "$GITHUB_ENV"
+
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ env.ARCH }}
+          path: /tmp/digests/*
+          retention-days: 1
+
+  publish:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-24.04
+    env:
+      # Optional public mirrors (the fork's own GHCR package can't be made public).
+      #   Docker Hub:    secret DOCKERHUB_TOKEN + variable DOCKERHUB_USERNAME
+      #   personal GHCR: secret GHCR_MIRROR_TOKEN (PAT, write:packages) + variable GHCR_MIRROR_OWNER
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+      GHCR_MIRROR_TOKEN: ${{ secrets.GHCR_MIRROR_TOKEN }}
+      GHCR_MIRROR_OWNER: ${{ vars.GHCR_MIRROR_OWNER }}
+    steps:
+      - name: Image name (lowercase)
+        run: echo "IMAGE=${REGISTRY}/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref_name == 'docker' || github.ref_name == github.event.repository.default_branch }}
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha
+
+      - name: Create multi-arch manifest
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf "${IMAGE}@sha256:%s " *)
+
+      - run: docker buildx imagetools inspect "${IMAGE}:sha-${GITHUB_SHA::7}"
+
+      - name: Mirror to Docker Hub
+        if: env.DOCKERHUB_TOKEN != '' && env.DOCKERHUB_USERNAME != '' && steps.meta.outputs.tags != ''
+        run: |
+          echo "$DOCKERHUB_TOKEN" | docker login docker.io -u "$DOCKERHUB_USERNAME" --password-stdin
+          DST="docker.io/${DOCKERHUB_USERNAME,,}/issw2026-autoates-workshop"
+          docker buildx imagetools create $(for t in $(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON"); do
+            echo "-t $DST:${t##*:}"; done) "${IMAGE}:sha-${GITHUB_SHA::7}"
+
+      - name: Mirror to personal GHCR
+        if: env.GHCR_MIRROR_TOKEN != '' && env.GHCR_MIRROR_OWNER != ''
+        run: |
+          echo "$GHCR_MIRROR_TOKEN" | docker login ghcr.io -u "$GHCR_MIRROR_OWNER" --password-stdin
+          DST="ghcr.io/${GHCR_MIRROR_OWNER,,}/issw2026-autoates-workshop"
+          docker buildx imagetools create $(for t in $(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON"); do
+            echo "-t $DST:${t##*:}"; done) "${IMAGE}:sha-${GITHUB_SHA::7}"

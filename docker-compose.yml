@@ -1,0 +1,22 @@
+# ISSW 2026 autoATES workshop in Docker. See DOCKER.md.
+#
+#   docker compose pull       # prebuilt image (or: docker compose build)
+#   docker compose up         # JupyterLab at http://localhost:8888
+#
+services:
+  workshop:
+    # Public copy on GHCR. Docker Hub mirror: WORKSHOP_IMAGE=docker.io/surfjedi/issw2026-autoates-workshop:latest
+    image: ${WORKSHOP_IMAGE:-ghcr.io/surfjedi/issw2026-autoates-workshop:latest}
+    build: .
+    ports:
+      # Change the host port with JUPYTER_PORT=8899 docker compose up if 8888 is busy.
+      - "127.0.0.1:${JUPYTER_PORT:-8888}:8888"
+    volumes:
+      # Your clone of this repo: notebook edits and outputs stay on your disk,
+      # where QGIS can open them.
+      - ./:/workshop
+    # Linux only: run as your own user so new files are not owned by another uid.
+    #   HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose up
+    # (Docker Desktop on macOS / Windows maps ownership for you; leave unset.)
+    user: "${HOST_UID:-57439}:${HOST_GID:-57439}"
+    shm_size: 2gb

@@ -12,7 +12,8 @@ This repository is the participant kit: notebooks, the Connaught Creek
 dataset, reference outputs for each step, and the schedule. It is separate
 from the research tree used to build the western Canada production maps.
 
-**If you want to run the models:** start with [SETUP.md](SETUP.md).  
+**If you want to run the models:** start with [SETUP.md](SETUP.md), or
+with [DOCKER.md](DOCKER.md) if you have Docker (fastest).  
 **If you want the day plan:** [SCHEDULE.md](SCHEDULE.md).  
 **Email to participants:** [participant/EMAIL.md](participant/EMAIL.md).
 
@@ -54,10 +55,44 @@ Laptops will be slower. Reference outputs are in
 
 ## Before Saturday
 
-1. Follow [SETUP.md](SETUP.md): Miniforge, QGIS, three git clones, and
-   `conda env create`.
-2. Run `python check_setup.py` and check that the lines print `OK`.
-3. Skim [SCHEDULE.md](SCHEDULE.md). The papers are optional background.
+Pick one of the two setups:
+
+- **Docker (fastest).** One download, no conda, compiler, or extra clones.
+  Follow [DOCKER.md](DOCKER.md) (macOS, Windows, Linux), then run
+  `docker compose run --rm workshop python check_setup.py`.
+- **conda.** Follow [SETUP.md](SETUP.md): Miniforge, QGIS, three git clones,
+  and `conda env create`. Then run `python check_setup.py`.
+
+Either way, check that the lines print `OK`, and skim
+[SCHEDULE.md](SCHEDULE.md). The papers are optional background.
+
+### Docker quick start
+
+With Docker installed and running ([DOCKER.md](DOCKER.md) step 1):
+
+```bash
+git clone -b docker https://github.com/Avalanche-Savvy/issw2026-autoates-workshop.git
+cd issw2026-autoates-workshop
+docker compose pull      # ~1 GB download, once
+docker compose up
+```
+
+Open http://localhost:8888 and start with `notebooks/00_orientation.ipynb`
+(kernel **autoATES workshop**). Outputs are written into this folder, so
+QGIS on your laptop can open them.
+
+The prebuilt image (linux/amd64 and linux/arm64, so Apple Silicon runs it
+natively) is published in two places:
+
+| Registry | Image |
+|---|---|
+| GitHub Container Registry (default) | `ghcr.io/surfjedi/issw2026-autoates-workshop:latest` |
+| Docker Hub (backup) | `docker.io/surfjedi/issw2026-autoates-workshop:latest` |
+
+To use the Docker Hub copy, set
+`WORKSHOP_IMAGE=docker.io/surfjedi/issw2026-autoates-workshop:latest`
+before `docker compose pull` and `up`. If neither download works,
+`docker compose build` builds the same image locally (10–20 minutes).
 
 If the install is still giving you trouble, please still come. You will
 see every step on the projector, and you can run the notebooks later from
@@ -67,13 +102,15 @@ in the Peak Room from 08:15, and we will have USB copies of the folders.
 
 Conference networks are often slow with a few dozen people downloading
 the same packages. Please get the three folders onto disk before you
-travel if you can.
+travel if you can. With Docker, run `docker compose pull` before you travel.
 
 ## Repository layout
 
 ```
 check_setup.py             environment check
 SETUP.md                   install, including a short conda walkthrough
+DOCKER.md                  Docker setup for macOS / Windows / Linux
+Dockerfile, docker-compose.yml   the workshop image and how to run it
 SCHEDULE.md                Saturday timetable
 notebooks/                 00–06, run in order
 data/<step>/inputs/        what that step needs

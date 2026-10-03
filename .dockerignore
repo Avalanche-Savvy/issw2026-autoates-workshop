@@ -1,0 +1,10 @@
+.git
+.github
+outputs/
+notebooks/work/
+run_*/
+**/__pycache__
+**/.ipynb_checkpoints
+*.pyc
+*.qgz
+.DS_Store

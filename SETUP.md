@@ -6,6 +6,14 @@ about 30–45 minutes the first time and need admin rights on the laptop.
 Helpers will be in the Peak Room from 08:15 with USB copies if anything
 is still stuck.
 
+> **Two ways to set up.**
+>
+> - **Option A — Docker (fastest):** if you have, or can install, Docker,
+>   follow [DOCKER.md](DOCKER.md) instead of this page. It is one download
+>   and `docker compose up`, with no conda, compiler, or extra clones.
+>   You still need QGIS (section 0) to look at the maps.
+> - **Option B — conda:** the steps below.
+
 These instructions assume you may not have used conda before.
 
 ## What you are installing
